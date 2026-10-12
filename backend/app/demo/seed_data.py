@@ -26,6 +26,10 @@ def seed_database(db: Session, force_reset: bool = True):
         db.query(Buyer).delete()
         db.query(BusinessProfile).delete()
         db.commit()
+    else:
+        # If records already exist, return early without re-inserting
+        if db.query(BusinessProfile).count() > 0:
+            return
 
     # 1. Create Sample Business Profile
     profile = BusinessProfile(
