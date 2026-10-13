@@ -7,7 +7,7 @@ from backend.app.schemas.supplier import BusinessProfileResponse
 class UserRegisterRequest(BaseModel):
     email: str = Field(..., pattern=r"^[\w\.\+\-]+@[\w\.\-]+\.\w+$", description="Valid email address")
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters")
-    full_name: str = Field(..., min_length=2)
+    full_name: Optional[str] = "MSME Owner"
     phone: Optional[str] = None
     business_name: Optional[str] = None
     enterprise_type: Optional[str] = "micro"
