@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional, Dict, Any, List
 from fastapi import HTTPException
 
@@ -20,17 +20,21 @@ from backend.app.services.invoice_service import STAGE_LABELS
 
 class CaseService:
     @staticmethod
-    def get_case(db: Session, case_id: int) -> Case:
+    def get_case(db: Session, case_id: int, business_profile_id: Optional[int] = None) -> Case:
         case = db.query(Case).filter(Case.id == case_id).first()
         if not case:
             raise HTTPException(status_code=404, detail="Case not found")
+        if business_profile_id is not None and case.invoice.business_profile_id != business_profile_id:
+            raise HTTPException(status_code=404, detail="Case not found or access denied")
         return CaseService._enrich_case(db, case)
 
     @staticmethod
-    def get_case_by_invoice_id(db: Session, invoice_id: int) -> Case:
+    def get_case_by_invoice_id(db: Session, invoice_id: int, business_profile_id: Optional[int] = None) -> Case:
         case = db.query(Case).filter(Case.invoice_id == invoice_id).first()
         if not case:
             raise HTTPException(status_code=404, detail=f"Case for invoice id {invoice_id} not found")
+        if business_profile_id is not None and case.invoice.business_profile_id != business_profile_id:
+            raise HTTPException(status_code=404, detail="Case not found or access denied")
         return CaseService._enrich_case(db, case)
 
     @staticmethod
@@ -77,10 +81,12 @@ class CaseService:
         return case
 
     @staticmethod
-    def update_case_stage(db: Session, case_id: int, payload: CaseStageUpdate) -> Case:
+    def update_case_stage(db: Session, case_id: int, payload: CaseStageUpdate, business_profile_id: Optional[int] = None) -> Case:
         case = db.query(Case).filter(Case.id == case_id).first()
         if not case:
             raise HTTPException(status_code=404, detail="Case not found")
+        if business_profile_id is not None and case.invoice.business_profile_id != business_profile_id:
+            raise HTTPException(status_code=404, detail="Case not found or access denied")
 
         old_stage = case.current_stage
         case.current_stage = payload.current_stage
@@ -106,10 +112,18 @@ class CaseService:
 
         db.commit()
         db.refresh(case)
-        return CaseService.get_case(db, case.id)
+        return CaseService.get_case(db, case.id, business_profile_id=business_profile_id)
 
     @staticmethod
-    def update_evidence_item(db: Session, case_id: int, item_id: int, payload: EvidenceItemUpdate) -> EvidenceItem:
+    def update_evidence_item(
+        db: Session, case_id: int, item_id: int, payload: EvidenceItemUpdate, business_profile_id: Optional[int] = None
+    ) -> EvidenceItem:
+        case = db.query(Case).filter(Case.id == case_id).first()
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found")
+        if business_profile_id is not None and case.invoice.business_profile_id != business_profile_id:
+            raise HTTPException(status_code=404, detail="Case not found or access denied")
+
         item = db.query(EvidenceItem).filter(
             EvidenceItem.id == item_id,
             EvidenceItem.case_id == case_id
@@ -117,22 +131,26 @@ class CaseService:
         if not item:
             raise HTTPException(status_code=404, detail="Evidence item not found")
 
-        update_data = payload.dict(exclude_unset=True)
+        update_data = payload.model_dump(exclude_unset=True)
         for key, val in update_data.items():
             setattr(item, key, val)
 
         if "status" in update_data and update_data["status"] == "provided" and not item.uploaded_at:
-            item.uploaded_at = datetime.utcnow()
+            item.uploaded_at = datetime.now(timezone.utc)
 
         db.commit()
         db.refresh(item)
         return item
 
     @staticmethod
-    def add_follow_up_event(db: Session, case_id: int, payload: FollowUpEventCreate) -> FollowUpEvent:
+    def add_follow_up_event(
+        db: Session, case_id: int, payload: FollowUpEventCreate, business_profile_id: Optional[int] = None
+    ) -> FollowUpEvent:
         case = db.query(Case).filter(Case.id == case_id).first()
         if not case:
             raise HTTPException(status_code=404, detail="Case not found")
+        if business_profile_id is not None and case.invoice.business_profile_id != business_profile_id:
+            raise HTTPException(status_code=404, detail="Case not found or access denied")
 
         event = FollowUpEvent(
             case_id=case.id,
@@ -153,8 +171,10 @@ class CaseService:
         return event
 
     @staticmethod
-    def generate_reminder_draft(db: Session, case_id: int, req: ReminderDraftRequest) -> ReminderDraftResponse:
-        case = CaseService.get_case(db, case_id)
+    def generate_reminder_draft(
+        db: Session, case_id: int, req: ReminderDraftRequest, business_profile_id: Optional[int] = None
+    ) -> ReminderDraftResponse:
+        case = CaseService.get_case(db, case_id, business_profile_id=business_profile_id)
         invoice = case.invoice
         profile = db.query(BusinessProfile).filter(BusinessProfile.id == invoice.business_profile_id).first()
         
@@ -309,5 +329,6 @@ Authorized Signatory / Finance Lead
             notice_title=notice_title,
             has_statutory_citations=has_citations,
             review_disclaimer=disclaimer,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
+

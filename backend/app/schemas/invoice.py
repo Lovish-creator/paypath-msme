@@ -45,10 +45,27 @@ class InvoiceBase(BaseModel):
     total_amount: float = Field(..., gt=0, description="Total invoice amount must be positive")
     goods_services_description: Optional[str] = None
     notes: Optional[str] = None
+    source_file_path: Optional[str] = None
+    extraction_metadata: Optional[str] = None
 
 
 class InvoiceCreate(InvoiceBase):
     pass
+
+
+class InvoiceExtractionResult(BaseModel):
+    invoice_number: Optional[str] = None
+    buyer_name: Optional[str] = None
+    buyer_gstin: Optional[str] = None
+    invoice_date: Optional[str] = None
+    total_amount: Optional[float] = None
+    agreed_credit_days: Optional[int] = 30
+    has_written_agreement: bool = True
+    confidence_score: float = 0.0
+    raw_text_preview: str = ""
+    source_file_name: str = ""
+    saved_file_path: str = ""
+
 
 
 class InvoiceUpdate(BaseModel):

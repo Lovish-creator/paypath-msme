@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Any, List
 
 from backend.app.models.invoice import Invoice
@@ -59,14 +59,16 @@ class DashboardService:
                 if timeline["is_overdue"]:
                     total_overdue += inv.outstanding_balance
                     overdue_count += 1
-                elif 0 <= timeline["days_remaining"] <= 14:
+                elif 0 <= timeline["days_remaining"] <= 14 and not timeline.get("is_overdue") and timeline.get("calculated_due_date"):
+                    due_val = timeline["calculated_due_date"]
+                    due_str = due_val.isoformat() if hasattr(due_val, "isoformat") else str(due_val)
                     approaching_list.append(
                         ApproachingInvoice(
                             invoice_id=inv.id,
                             invoice_number=inv.invoice_number,
                             buyer_name=inv.buyer_name,
                             outstanding_balance=inv.outstanding_balance,
-                            due_date=timeline["calculated_due_date"],
+                            due_date=due_str,
                             days_remaining=timeline["days_remaining"],
                         )
                     )
@@ -121,9 +123,16 @@ class DashboardService:
 
             # Check if case awaits follow-up (unpaid invoice and no follow-up in last 7 days)
             if c.invoice.outstanding_balance > 0:
-                recent_events = [ev for ev in c.follow_up_events if (datetime.utcnow() - ev.performed_at).days <= 7]
+                now_dt = datetime.now(timezone.utc)
+                recent_events = [
+                    ev for ev in c.follow_up_events
+                    if (
+                        (now_dt - (ev.performed_at.replace(tzinfo=timezone.utc) if ev.performed_at.tzinfo is None else ev.performed_at)).days <= 7
+                    )
+                ]
                 if not recent_events:
                     cases_awaiting_followup += 1
+
 
         # Recent follow-up activity
         recent_events_query = (

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from backend.app.models.supplier import SupplierListing, SupplierEnquiry
@@ -85,7 +85,7 @@ class SupplierService:
             product_interest=payload.product_interest.strip(),
             message=payload.message.strip(),
             consent_given=True,
-            consent_timestamp=datetime.utcnow(),
+            consent_timestamp=datetime.now(timezone.utc),
         )
         db.add(enquiry)
         db.commit()
@@ -111,9 +111,10 @@ class SupplierService:
         if not profile:
             raise HTTPException(status_code=404, detail="Business profile not found")
 
-        for key, val in payload.dict(exclude_unset=True).items():
+        for key, val in payload.model_dump(exclude_unset=True).items():
             setattr(profile, key, val)
 
         db.commit()
         db.refresh(profile)
         return profile
+

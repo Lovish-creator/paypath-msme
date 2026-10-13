@@ -14,9 +14,11 @@ import {
   Loader2,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import { DashboardData } from '../../types';
 
 export const DashboardView: React.FC = () => {
+  const { user } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +80,7 @@ export const DashboardView: React.FC = () => {
               <span className="text-xs text-slate-400">Micro & Small Enterprise Protection</span>
             </div>
             <h1 className="text-2xl font-bold tracking-tight mt-1 text-white">
-              Apex Uniforms & Apparel — Receivables Dashboard
+              {user?.business_profile?.name || "Apex Uniforms & Apparel"} — Receivables Dashboard
             </h1>
             <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
               Real-time monitoring of commercial debts under the Micro, Small and Medium Enterprises Development (MSMED) Act, 2006. All figures reflect verified invoice records.
@@ -95,6 +97,24 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Empty State Banner if no invoices */}
+      {data.total_invoices_count === 0 && (
+        <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-6 text-center max-w-2xl mx-auto shadow-sm">
+          <FileText className="w-10 h-10 text-blue-600 mx-auto mb-2" />
+          <h2 className="text-base font-bold text-blue-900">Workspace Ready — No Invoices Recorded Yet</h2>
+          <p className="text-xs text-blue-700 mt-1 max-w-md mx-auto">
+            You are operating in an isolated, secure MSME workspace. Record your first unpaid invoice or upload an invoice PDF to start tracking statutory due dates, compound interest, and escalation notices.
+          </p>
+          <Link
+            to="/invoices"
+            className="mt-4 inline-flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors"
+          >
+            <span>Record / Upload First Invoice</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      )}
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">

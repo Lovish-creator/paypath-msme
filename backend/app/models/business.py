@@ -1,6 +1,11 @@
 from sqlalchemy import Column, Integer, String, DateTime
-from datetime import datetime
+from sqlalchemy.orm import relationship
+from datetime import datetime, timezone
 from backend.app.db.database import Base
+
+
+def utc_now():
+    return datetime.now(timezone.utc)
 
 
 class BusinessProfile(Base):
@@ -18,4 +23,9 @@ class BusinessProfile(Base):
     purchasing_interests = Column(String(500), nullable=False, default="thread,fabric,buttons,zippers,packaging")
     contact_email = Column(String(255), nullable=False, default="info@apexuniforms.in")
     contact_phone = Column(String(50), nullable=False, default="+91 98765 43210")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    owner_user_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+
+    users = relationship("User", back_populates="business_profile", foreign_keys="[User.business_profile_id]")
+    invoices = relationship("Invoice", back_populates="business_profile", cascade="all, delete-orphan")
+

@@ -15,6 +15,25 @@ class LegalEngine:
     DEFAULT_BANK_RATE = settings.RBI_BANK_RATE_PERCENT  # 6.75% per annum
     STATUTORY_MULTIPLIER = settings.MSME_INTEREST_MULTIPLIER  # 3x bank rate
 
+    # Official RBI Bank Rates notified under Section 49 of the RBI Act, 1934
+    RBI_RATE_SCHEDULE = [
+        (date(2023, 2, 8), 6.75, "RBI/2022-2023/178 - Monetary Policy: Bank Rate 6.75%"),
+        (date(2022, 12, 7), 6.50, "RBI/2022-2023/150 - Bank Rate 6.50%"),
+        (date(2022, 9, 30), 6.15, "RBI/2022-2023/121 - Bank Rate 6.15%"),
+        (date(2022, 8, 5), 5.65, "RBI/2022-2023/102 - Bank Rate 5.65%"),
+        (date(2022, 5, 4), 4.65, "RBI/2022-2023/45 - Bank Rate 4.65%"),
+        (date(2020, 5, 22), 4.25, "RBI/2019-2020/238 - Bank Rate 4.25%"),
+    ]
+
+    @classmethod
+    def get_effective_bank_rate(cls, as_of: Optional[date] = None) -> float:
+        """Returns the statutory RBI Bank Rate effective for the specified date."""
+        query_date = as_of or date.today()
+        for eff_date, rate, _ in cls.RBI_RATE_SCHEDULE:
+            if query_date >= eff_date:
+                return rate
+        return cls.DEFAULT_BANK_RATE
+
     @classmethod
     def calculate_timeline_and_interest(
         cls,
@@ -37,8 +56,10 @@ class LegalEngine:
         warnings: List[str] = []
 
         # 1. Determine Reference Date (Section 2(a) & 2(b) MSMED Act)
-        reference_date: date = invoice_date
+        reference_date: Optional[date] = None
         reference_type: str = "invoice_date_provisional"
+        is_provisional: bool = False
+        objection_unresolved: bool = False
 
         if has_objection:
             if objection_resolved_date:
@@ -50,11 +71,17 @@ class LegalEngine:
                 )
             else:
                 reference_type = "objection_pending"
+                objection_unresolved = True
+                is_provisional = True
                 warnings.append(
                     "Buyer objection is recorded as unresolved. Under Section 2(a)(ii) MSMED Act, "
-                    "the statutory timeline is paused until the objection is resolved."
+                    "the statutory timeline is paused until the objection is resolved by the supplier. "
+                    "Statutory overdue status and interest cannot legally accrue during an active dispute."
                 )
-                calculation_trace.append("Objection pending; calculation marked as provisional.")
+                calculation_trace.append(
+                    "Section 2(a)(ii) MSMED Act: Active objection pauses deemed acceptance. "
+                    "No statutory due date or overdue interest calculated until objection resolution."
+                )
         elif acceptance_date:
             reference_date = acceptance_date
             reference_type = "acceptance_date"
@@ -71,6 +98,7 @@ class LegalEngine:
         else:
             reference_date = invoice_date
             reference_type = "invoice_date_provisional"
+            is_provisional = True
             warnings.append(
                 "Neither delivery proof nor acceptance date provided. Using invoice date as provisional fallback. "
                 "Official MSME Samadhaan proceedings require documentary proof of delivery/acceptance."
@@ -115,70 +143,26 @@ class LegalEngine:
                 "No written agreement recorded. Statutory 15-day timeline applied per Section 15 MSMED Act."
             )
 
-        # 3. Calculate Due Date
-        calculated_due_date = reference_date + timedelta(days=statutory_term_days)
-        calculation_trace.append(
-            f"Reference Date ({reference_date}) + {statutory_term_days} days = Statutory Due Date ({calculated_due_date})."
-        )
-
-        # 4. Overdue and Days Evaluation
-        is_overdue = False
-        days_overdue = 0
-        days_remaining = 0
-
-        if evaluation_date > calculated_due_date:
-            is_overdue = True
-            days_overdue = (evaluation_date - calculated_due_date).days
-            days_remaining = 0
-            calculation_trace.append(
-                f"As of evaluation date ({evaluation_date}), invoice is {days_overdue} days overdue beyond due date ({calculated_due_date})."
-            )
-        else:
-            is_overdue = False
-            days_overdue = 0
-            days_remaining = (calculated_due_date - evaluation_date).days
-            calculation_trace.append(
-                f"Invoice is currently within credit period. {days_remaining} days remaining until due date ({calculated_due_date})."
-            )
-
-        # 5. Compound Interest Calculation (Section 16 MSMED Act)
-        # Section 16 mandates compound interest with monthly rests at 3x the RBI Bank Rate
-        bank_rate = custom_bank_rate if custom_bank_rate is not None else cls.DEFAULT_BANK_RATE
+        # Determine effective Bank Rate
+        bank_rate = custom_bank_rate if custom_bank_rate is not None else cls.get_effective_bank_rate(evaluation_date)
         annual_statutory_rate = round(bank_rate * cls.STATUTORY_MULTIPLIER, 4)
         monthly_rate = annual_statutory_rate / 100.0 / 12.0
 
+        # 3. Calculate Due Date & Overdue Evaluation
+        calculated_due_date: Optional[date] = None
+        is_overdue = False
+        days_overdue = 0
+        days_remaining = 0
         estimated_interest = 0.0
         interest_breakdown: Dict[str, Any] = {}
 
-        if is_overdue and outstanding_principal > 0:
-            # Compound interest with monthly rests
-            full_months = days_overdue // 30
-            residual_days = days_overdue % 30
-            
-            # Compounding over full months
-            compounded_principal = outstanding_principal * ((1.0 + monthly_rate) ** full_months)
-            
-            # Simple pro-rata interest for the residual days within the ongoing month
-            pro_rata_factor = 1.0 + (monthly_rate * (residual_days / 30.0))
-            total_due_with_interest = compounded_principal * pro_rata_factor
-            
-            estimated_interest = round(total_due_with_interest - outstanding_principal, 2)
-            
-            calculation_trace.append(
-                f"Section 16 statutory interest applied: RBI Bank Rate {bank_rate}% x 3 = {annual_statutory_rate}% p.a. "
-                f"Compounded monthly for {full_months} full months and {residual_days} residual days: "
-                f"Estimated Interest = ₹{estimated_interest:,.2f} on Principal ₹{outstanding_principal:,.2f}."
-            )
-            interest_breakdown = {
-                "principal": outstanding_principal,
-                "full_months": full_months,
-                "residual_days": residual_days,
-                "monthly_interest_rate_pct": round(monthly_rate * 100, 4),
-                "annual_interest_rate_pct": annual_statutory_rate,
-                "compounded_amount": round(total_due_with_interest, 2),
-                "estimated_interest": estimated_interest,
-            }
-        else:
+        if objection_unresolved or reference_date is None:
+            # Paused timeline under Section 2(a)(ii)
+            calculated_due_date = None
+            is_overdue = False
+            days_overdue = 0
+            days_remaining = 0
+            estimated_interest = 0.0
             interest_breakdown = {
                 "principal": outstanding_principal,
                 "full_months": 0,
@@ -188,6 +172,65 @@ class LegalEngine:
                 "compounded_amount": outstanding_principal,
                 "estimated_interest": 0.0,
             }
+            calculation_trace.append(
+                "Statutory timeline is paused. No due date computed; interest calculation withheld."
+            )
+        else:
+            calculated_due_date = reference_date + timedelta(days=statutory_term_days)
+            calculation_trace.append(
+                f"Reference Date ({reference_date}) + {statutory_term_days} days = Statutory Due Date ({calculated_due_date})."
+            )
+
+            if evaluation_date > calculated_due_date:
+                is_overdue = True
+                days_overdue = (evaluation_date - calculated_due_date).days
+                days_remaining = 0
+                calculation_trace.append(
+                    f"As of evaluation date ({evaluation_date}), invoice is {days_overdue} days overdue beyond due date ({calculated_due_date})."
+                )
+            else:
+                is_overdue = False
+                days_overdue = 0
+                days_remaining = (calculated_due_date - evaluation_date).days
+                calculation_trace.append(
+                    f"Invoice is currently within credit period. {days_remaining} days remaining until due date ({calculated_due_date})."
+                )
+
+            # 5. Compound Interest Calculation (Section 16 MSMED Act)
+            if is_overdue and outstanding_principal > 0:
+                full_months = days_overdue // 30
+                residual_days = days_overdue % 30
+                
+                compounded_principal = outstanding_principal * ((1.0 + monthly_rate) ** full_months)
+                pro_rata_factor = 1.0 + (monthly_rate * (residual_days / 30.0))
+                total_due_with_interest = compounded_principal * pro_rata_factor
+                
+                estimated_interest = round(total_due_with_interest - outstanding_principal, 2)
+                
+                calculation_trace.append(
+                    f"Section 16 statutory interest applied: RBI Bank Rate {bank_rate}% x 3 = {annual_statutory_rate}% p.a. "
+                    f"Compounded monthly for {full_months} full months and {residual_days} residual days: "
+                    f"Estimated Interest = ₹{estimated_interest:,.2f} on Principal ₹{outstanding_principal:,.2f}."
+                )
+                interest_breakdown = {
+                    "principal": outstanding_principal,
+                    "full_months": full_months,
+                    "residual_days": residual_days,
+                    "monthly_interest_rate_pct": round(monthly_rate * 100, 4),
+                    "annual_interest_rate_pct": annual_statutory_rate,
+                    "compounded_amount": round(total_due_with_interest, 2),
+                    "estimated_interest": estimated_interest,
+                }
+            else:
+                interest_breakdown = {
+                    "principal": outstanding_principal,
+                    "full_months": 0,
+                    "residual_days": 0,
+                    "monthly_interest_rate_pct": round(monthly_rate * 100, 4),
+                    "annual_interest_rate_pct": annual_statutory_rate,
+                    "compounded_amount": outstanding_principal,
+                    "estimated_interest": 0.0,
+                }
 
         total_claimable = round(outstanding_principal + estimated_interest, 2)
 
@@ -195,7 +238,12 @@ class LegalEngine:
         sec_43b_h_applicable = enterprise_type.lower() in ("micro", "small")
         sec_43b_h_impact = ""
         if sec_43b_h_applicable:
-            if is_overdue and outstanding_principal > 0:
+            if objection_unresolved:
+                sec_43b_h_impact = (
+                    "Section 43B(h) Monitoring Paused: Payment deadline is indeterminate while objection is unresolved. "
+                    "Prompt resolution of dispute is advised before fiscal year closing."
+                )
+            elif is_overdue and outstanding_principal > 0:
                 sec_43b_h_impact = (
                     "CRITICAL TAX DISALLOWANCE RISK: Under Section 43B(h) of the Income Tax Act, 1961, "
                     "the buyer cannot claim this outstanding amount as a deductible tax expense for the financial year "
@@ -225,12 +273,13 @@ class LegalEngine:
             warnings.append("Delivery challan or client acceptance signature needed to substantiate deemed acceptance date.")
 
         return {
-            "reference_date": reference_date.isoformat(),
+            "reference_date": reference_date.isoformat() if reference_date else None,
             "reference_type": reference_type,
+            "is_provisional": is_provisional,
             "statutory_term_days": statutory_term_days,
             "statutory_term_capped": statutory_term_capped,
             "statutory_rule_citation": statutory_rule_citation,
-            "calculated_due_date": calculated_due_date.isoformat(),
+            "calculated_due_date": calculated_due_date.isoformat() if calculated_due_date else None,
             "evaluation_date": evaluation_date.isoformat(),
             "is_overdue": is_overdue,
             "days_overdue": days_overdue,

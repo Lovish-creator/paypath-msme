@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -8,6 +9,7 @@ from backend.app.db.database import Base, engine, SessionLocal
 from backend.app.demo.seed_data import seed_database
 from backend.app.models.invoice import Invoice
 from backend.app.api.routes_health import router as health_router
+from backend.app.api.routes_auth import router as auth_router
 from backend.app.api.routes_dashboard import router as dashboard_router
 from backend.app.api.routes_invoices import router as invoices_router
 from backend.app.api.routes_cases import router as cases_router
@@ -17,10 +19,28 @@ from backend.app.api.routes_demo import router as demo_router
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("paypath")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create tables on startup
+    Base.metadata.create_all(bind=engine)
+    if settings.ENABLE_DEMO_SEEDING:
+        db = SessionLocal()
+        try:
+            count = db.query(Invoice).count()
+            if count == 0:
+                logger.info("Initializing database with PitchVerse demo seed data...")
+                seed_database(db, force_reset=False)
+        finally:
+            db.close()
+    yield
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="PayPath MSME — Delayed Payment Escalation, Traceable Legal Engine & B2B Supplier Discovery",
+    lifespan=lifespan,
 )
 
 # Enable CORS for Vite frontend
@@ -31,21 +51,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def startup_event():
-    # Create tables
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        # Check if database is empty; if so, seed demo baseline
-        count = db.query(Invoice).count()
-        if count == 0:
-            logger.info("Initializing database with PitchVerse demo seed data...")
-            seed_database(db, force_reset=False)
-    finally:
-        db.close()
 
 
 @app.exception_handler(Exception)
@@ -59,11 +64,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Register API Routers
 app.include_router(health_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(invoices_router, prefix="/api")
 app.include_router(cases_router, prefix="/api")
 app.include_router(suppliers_router, prefix="/api")
 app.include_router(demo_router, prefix="/api")
+
 
 
 @app.get("/")

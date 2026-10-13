@@ -75,6 +75,8 @@ export interface Invoice {
   status: 'draft' | 'issued' | 'partially_paid' | 'paid' | 'overdue' | 'escalated';
   goods_services_description?: string;
   notes?: string;
+  source_file_path?: string;
+  extraction_metadata?: any;
   created_at: string;
   updated_at: string;
   payments: Payment[];
@@ -234,3 +236,34 @@ export interface BusinessProfile {
   contact_phone: string;
   created_at: string;
 }
+
+export interface User {
+  id: number;
+  email: string;
+  is_active: boolean;
+  business_profile?: BusinessProfile | null;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface DocumentExtractionResult {
+  filename: string;
+  invoice_number?: string;
+  invoice_date?: string;
+  buyer_name?: string;
+  buyer_gstin?: string;
+  total_amount?: number;
+  confidence: {
+    invoice_number: number;
+    invoice_date: number;
+    buyer_name: number;
+    buyer_gstin: number;
+    total_amount: number;
+  };
+  raw_text_snippet: string;
+}
+

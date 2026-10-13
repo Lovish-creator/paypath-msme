@@ -158,12 +158,22 @@ export const CaseDetailView: React.FC = () => {
 
   if (error || !caseData) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center max-w-lg mx-auto mt-12">
-        <AlertTriangle className="w-10 h-10 text-red-600 mx-auto mb-3" />
-        <h3 className="text-base font-bold text-red-900">Case Record Not Found</h3>
-        <p className="text-sm text-red-700 mt-1">{error || 'Unable to retrieve case information.'}</p>
-        <Link to="/invoices" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-md shadow-sm">
-          Return to Invoices
+      <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center max-w-lg mx-auto mt-12 shadow-sm space-y-3">
+        <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto">
+          <Scale className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-bold text-slate-800">No Escalation Case Selected</h3>
+        <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+          {error?.includes('404') || error?.includes('Not found')
+            ? 'This case record is not available in your current MSME workspace. To track statutory escalation, review evidence completeness, and prepare Section 16 notices, choose an invoice from your ledger.'
+            : error || 'Unable to retrieve case information.'}
+        </p>
+        <Link
+          to="/invoices"
+          className="mt-3 inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors"
+        >
+          <span>View Invoices & Escalate</span>
+          <ArrowRight className="w-3.5 h-3.5" />
         </Link>
       </div>
     );

@@ -1,8 +1,11 @@
 import pytest
 from fastapi.testclient import TestClient
 from backend.app.main import app
+from backend.app.core.security import create_access_token
 
 client = TestClient(app)
+client.headers.update({"Authorization": f"Bearer {create_access_token({'sub': '1', 'email': 'demo@apexuniforms.in'})}"})
+
 
 
 def test_supplier_discovery_matching():

@@ -16,8 +16,9 @@ class ApproachingInvoice(BaseModel):
     invoice_number: str
     buyer_name: str
     outstanding_balance: float
-    due_date: str
+    due_date: Optional[str] = "Pending"
     days_remaining: int
+
 
 
 class PromisedPaymentAlert(BaseModel):

@@ -70,7 +70,7 @@ def test_no_written_agreement_defaults_to_15_days():
 
 
 def test_objection_pauses_timeline():
-    """Test Section 2(a)(ii): unresolved objection flags pause in statutory deemed acceptance"""
+    """Test Section 2(a)(ii): unresolved objection strictly pauses deemed acceptance, withholding overdue status & interest"""
     inv_date = date(2026, 7, 1)
     del_date = date(2026, 7, 2)
 
@@ -81,11 +81,78 @@ def test_objection_pauses_timeline():
         objection_date=date(2026, 7, 8),
         objection_resolved_date=None,  # Unresolved
         outstanding_principal=75000.0,
+        as_of_date=date(2026, 9, 1),  # Even months later
     )
 
     assert result["reference_type"] == "objection_pending"
+    assert result["reference_date"] is None
+    assert result["calculated_due_date"] is None
+    assert result["is_overdue"] is False
+    assert result["days_overdue"] == 0
+    assert result["estimated_interest"] == 0.0
+    assert result["total_claimable_amount"] == 75000.0
+    assert result["is_provisional"] is True
     assert result["eligibility_status"] == "needs_professional_review"
     assert any("objection is recorded as unresolved" in w for w in result["warnings"])
+
+
+def test_objection_resolution_resumes_timeline():
+    """Test Section 2(a)(ii): once objection is resolved, timeline resumes from resolution date"""
+    inv_date = date(2026, 7, 1)
+    del_date = date(2026, 7, 2)
+    resolved_date = date(2026, 7, 20)  # Resolved on July 20
+    as_of = date(2026, 8, 25)  # 36 days after resolution => 6 days overdue on 30d credit
+
+    result = LegalEngine.calculate_timeline_and_interest(
+        invoice_date=inv_date,
+        delivery_date=del_date,
+        has_objection=True,
+        objection_date=date(2026, 7, 8),
+        objection_resolved_date=resolved_date,
+        has_written_agreement=True,
+        agreed_credit_days=30,
+        outstanding_principal=50000.0,
+        as_of_date=as_of,
+    )
+
+    assert result["reference_type"] == "objection_resolved_date"
+    assert result["reference_date"] == resolved_date.isoformat()
+    assert result["calculated_due_date"] == (resolved_date + timedelta(days=30)).isoformat()
+    assert result["is_overdue"] is True
+    assert result["days_overdue"] == 6
+    assert result["estimated_interest"] > 0
+    assert result["is_provisional"] is False
+
+
+def test_missing_evidence_is_provisional():
+    """Test fallback when neither delivery nor acceptance date is provided"""
+    inv_date = date(2026, 7, 1)
+
+    result = LegalEngine.calculate_timeline_and_interest(
+        invoice_date=inv_date,
+        delivery_date=None,
+        acceptance_date=None,
+        outstanding_principal=30000.0,
+        as_of_date=date(2026, 7, 10),
+    )
+
+    assert result["reference_type"] == "invoice_date_provisional"
+    assert result["is_provisional"] is True
+    assert any("Neither delivery proof nor acceptance date provided" in w for w in result["warnings"])
+
+
+def test_rbi_rate_schedule_lookup():
+    """Test date-effective RBI Bank Rate retrieval"""
+    # Rate before Feb 2023 was 6.50% (Dec 2022) or 4.25% (2020)
+    rate_2020 = LegalEngine.get_effective_bank_rate(date(2020, 6, 1))
+    assert rate_2020 == 4.25
+
+    rate_2022_dec = LegalEngine.get_effective_bank_rate(date(2022, 12, 15))
+    assert rate_2022_dec == 6.50
+
+    rate_2024 = LegalEngine.get_effective_bank_rate(date(2024, 1, 1))
+    assert rate_2024 == 6.75
+
 
 
 def test_section_16_compound_interest_math():

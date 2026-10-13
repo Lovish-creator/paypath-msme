@@ -1,12 +1,14 @@
 from sqlalchemy.orm import Session
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from backend.app.db.database import Base, engine, SessionLocal
+from backend.app.models.user import User
 from backend.app.models.business import BusinessProfile
 from backend.app.models.buyer import Buyer
 from backend.app.models.invoice import Invoice, Payment
 from backend.app.models.case import Case, EvidenceItem, FollowUpEvent
 from backend.app.models.supplier import SupplierListing, SupplierEnquiry
+from backend.app.core.security import hash_password
 from backend.app.services.invoice_service import STAGE_LABELS, DEFAULT_EVIDENCE_TEMPLATES
 
 
@@ -24,6 +26,7 @@ def seed_database(db: Session, force_reset: bool = True):
         db.query(Payment).delete()
         db.query(Invoice).delete()
         db.query(Buyer).delete()
+        db.query(User).delete()
         db.query(BusinessProfile).delete()
         db.commit()
     else:
@@ -47,7 +50,22 @@ def seed_database(db: Session, force_reset: bool = True):
         contact_phone="+91 98765 43210",
     )
     db.add(profile)
+    db.flush()
+
+    # Create canonical demo user for login
+    demo_user = User(
+        email="demo@apexuniforms.in",
+        hashed_password=hash_password("Password123!"),
+        full_name="Apex Demo Admin",
+        phone="+91 98765 43210",
+        business_profile_id=profile.id,
+    )
+    db.add(demo_user)
+    db.flush()
+
+    profile.owner_user_id = demo_user.id
     db.commit()
+
 
     today = date.today()
 

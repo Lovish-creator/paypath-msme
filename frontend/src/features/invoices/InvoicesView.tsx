@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Plus,
   Search,
@@ -13,11 +13,18 @@ import {
   FileCheck,
   Loader2,
   X,
+  Upload,
+  FileText,
+  Sparkles,
+  Check,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { Invoice } from '../../types';
+import { Invoice, DocumentExtractionResult } from '../../types';
 
 export const InvoicesView: React.FC = () => {
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,8 +34,13 @@ export const InvoicesView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
 
-  // Create Invoice Modal
+  // Create Invoice Modal & Extraction
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extractionResult, setExtractionResult] = useState<DocumentExtractionResult | null>(null);
+  const [extractionError, setExtractionError] = useState<string | null>(null);
+  const [sourceFilePath, setSourceFilePath] = useState<string | null>(null);
+
   const [newInvoiceData, setNewInvoiceData] = useState({
     invoice_number: '',
     buyer_name: '',
@@ -43,6 +55,63 @@ export const InvoicesView: React.FC = () => {
     goods_services_description: '',
   });
   const [creating, setCreating] = useState(false);
+
+  const resetCreateForm = () => {
+    setExtractionResult(null);
+    setExtractionError(null);
+    setSourceFilePath(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setNewInvoiceData({
+      invoice_number: '',
+      buyer_name: '',
+      buyer_gstin: '',
+      buyer_contact_email: '',
+      buyer_contact_phone: '',
+      invoice_date: new Date().toISOString().split('T')[0],
+      delivery_date: new Date().toISOString().split('T')[0],
+      has_written_agreement: true,
+      agreed_credit_days: 30,
+      total_amount: '',
+      goods_services_description: '',
+    });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setExtracting(true);
+      setExtractionError(null);
+      const res = await api.extractInvoiceDocument(file);
+      setExtractionResult(res);
+      setSourceFilePath(res.filename);
+
+      // Pre-fill form fields where extracted
+      setNewInvoiceData((prev) => ({
+        ...prev,
+        invoice_number: res.invoice_number || prev.invoice_number,
+        buyer_name: res.buyer_name || prev.buyer_name,
+        buyer_gstin: res.buyer_gstin || prev.buyer_gstin,
+        total_amount: res.total_amount ? res.total_amount.toString() : prev.total_amount,
+        invoice_date: res.invoice_date || prev.invoice_date,
+        goods_services_description: prev.goods_services_description || `Extracted from invoice file: ${res.filename}`,
+      }));
+    } catch (err: any) {
+      setExtractionError(err.message || 'Failed to extract document contents');
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleEscalate = async (invoiceId: number) => {
+    try {
+      const caseDetail = await api.getCaseByInvoice(invoiceId);
+      navigate(`/cases/${caseDetail.id}`);
+    } catch (err: any) {
+      alert('Failed to navigate to case: ' + err.message);
+    }
+  };
 
   // Record Payment Modal
   const [paymentModalInvoice, setPaymentModalInvoice] = useState<Invoice | null>(null);
@@ -89,21 +158,11 @@ export const InvoicesView: React.FC = () => {
         ...newInvoiceData,
         total_amount: parseFloat(newInvoiceData.total_amount),
         agreed_credit_days: Number(newInvoiceData.agreed_credit_days),
+        source_file_path: sourceFilePath || undefined,
+        extraction_metadata: extractionResult || undefined,
       });
       setShowCreateModal(false);
-      setNewInvoiceData({
-        invoice_number: '',
-        buyer_name: '',
-        buyer_gstin: '',
-        buyer_contact_email: '',
-        buyer_contact_phone: '',
-        invoice_date: new Date().toISOString().split('T')[0],
-        delivery_date: new Date().toISOString().split('T')[0],
-        has_written_agreement: true,
-        agreed_credit_days: 30,
-        total_amount: '',
-        goods_services_description: '',
-      });
+      resetCreateForm();
       fetchInvoices();
     } catch (err: any) {
       alert('Failed to record invoice: ' + err.message);
@@ -156,7 +215,7 @@ export const InvoicesView: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => { resetCreateForm(); setShowCreateModal(true); }}
           className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow-sm transition-colors flex items-center space-x-1.5 self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
@@ -211,8 +270,23 @@ export const InvoicesView: React.FC = () => {
             <p className="text-xs text-slate-500 font-medium">Loading invoice records...</p>
           </div>
         ) : invoices.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-xs">
-            No invoices match the specified criteria.
+          <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+              <FileText className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">No Invoices in this Workspace</h3>
+              <p className="text-xs text-slate-500 max-w-sm mt-0.5">
+                Record your first B2B invoice or upload a PDF bill to track statutory due dates, compound interest, and recovery notices.
+              </p>
+            </div>
+            <button
+              onClick={() => { resetCreateForm(); setShowCreateModal(true); }}
+              className="mt-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Record or Upload Invoice</span>
+            </button>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -235,7 +309,18 @@ export const InvoicesView: React.FC = () => {
                     <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
                       {/* Invoice # */}
                       <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
-                        {inv.invoice_number}
+                        <div className="flex items-center space-x-1">
+                          <span>{inv.invoice_number}</span>
+                          {inv.source_file_path && (
+                            <span
+                              className="inline-flex items-center space-x-0.5 bg-blue-50 text-blue-700 border border-blue-200 px-1 py-0.2 rounded text-[9px] font-sans font-medium"
+                              title={`Extracted from: ${inv.source_file_path}`}
+                            >
+                              <FileText className="w-2.5 h-2.5" />
+                              <span>PDF</span>
+                            </span>
+                          )}
+                        </div>
                         {inv.case && (
                           <div className="text-[10px] text-blue-600 font-normal mt-0.5">
                             {inv.case.reference_code}
@@ -321,13 +406,20 @@ export const InvoicesView: React.FC = () => {
                             Record Payment
                           </button>
                         )}
-                        {inv.case && (
+                        {inv.case ? (
                           <Link
                             to={`/cases/${inv.case.id}`}
                             className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1 rounded text-xs font-semibold inline-flex items-center space-x-1 transition-colors"
                           >
                             <span>Escalate</span>
                           </Link>
+                        ) : (
+                          <button
+                            onClick={() => handleEscalate(inv.id)}
+                            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1 rounded text-xs font-semibold inline-flex items-center space-x-1 transition-colors"
+                          >
+                            <span>Escalate</span>
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -464,11 +556,78 @@ export const InvoicesView: React.FC = () => {
                 <p className="text-xs text-slate-500">Auto-initializes pre-litigation case tracker and checklist</p>
               </div>
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => { resetCreateForm(); setShowCreateModal(false); }}
                 className="text-slate-400 hover:text-slate-600 p-1"
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* Document Upload & Extraction Section */}
+            <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-4 text-center">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="invoice-file-upload"
+              />
+              <label
+                htmlFor="invoice-file-upload"
+                className="cursor-pointer flex flex-col items-center justify-center space-y-1"
+              >
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-1 shadow-xs">
+                  {extracting ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Upload className="w-5 h-5" />
+                  )}
+                </div>
+                <div className="text-xs font-semibold text-slate-800">
+                  {extracting
+                    ? 'Extracting text and identifying invoice fields...'
+                    : 'Upload Invoice PDF / Scanned Bill'}
+                </div>
+                <p className="text-[10px] text-slate-500 max-w-xs">
+                  Instant text extraction for Invoice #, Date, Amount, Buyer GSTIN. All extracted fields are editable below.
+                </p>
+              </label>
+
+              {extractionError && (
+                <div className="mt-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded p-1.5 flex items-center justify-center space-x-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{extractionError}</span>
+                </div>
+              )}
+
+              {extractionResult && (
+                <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-left text-[11px] space-y-1">
+                  <div className="flex items-center space-x-1 text-emerald-800 font-bold">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Auto-Extracted from {extractionResult.filename}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-700">
+                    <div>
+                      Inv #: <span className="font-semibold text-slate-900">{extractionResult.invoice_number || 'Not detected'}</span>{' '}
+                      <span className="text-emerald-700 font-mono">({Math.round(extractionResult.confidence.invoice_number * 100)}%)</span>
+                    </div>
+                    <div>
+                      Amount: <span className="font-semibold text-slate-900">{extractionResult.total_amount ? `₹${extractionResult.total_amount.toLocaleString('en-IN')}` : 'Not detected'}</span>{' '}
+                      <span className="text-emerald-700 font-mono">({Math.round(extractionResult.confidence.total_amount * 100)}%)</span>
+                    </div>
+                    <div>
+                      Buyer GSTIN: <span className="font-semibold text-slate-900">{extractionResult.buyer_gstin || 'Not detected'}</span>
+                    </div>
+                    <div>
+                      Date: <span className="font-semibold text-slate-900">{extractionResult.invoice_date || 'Not detected'}</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-emerald-800 pt-0.5">
+                    ✓ Form auto-filled. Please review and adjust the fields below before recording.
+                  </p>
+                </div>
+              )}
             </div>
 
             <form onSubmit={handleCreateInvoice} className="space-y-3 text-xs">

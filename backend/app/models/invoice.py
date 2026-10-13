@@ -33,11 +33,15 @@ class Invoice(Base):
 
     goods_services_description = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
+    source_file_path = Column(String(500), nullable=True)
+    extraction_metadata = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    business_profile = relationship("BusinessProfile", back_populates="invoices")
     payments = relationship("Payment", back_populates="invoice", cascade="all, delete-orphan", order_by="Payment.payment_date.desc()")
     case = relationship("Case", back_populates="invoice", uselist=False, cascade="all, delete-orphan")
+
 
 
 class Payment(Base):

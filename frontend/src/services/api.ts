@@ -7,21 +7,43 @@ import {
   SupplierListing,
   SupplierEnquiry,
   BusinessProfile,
+  User,
+  TokenResponse,
+  DocumentExtractionResult,
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+const TOKEN_KEY = 'paypath_token';
+
+export const tokenStorage = {
+  get: (): string | null => localStorage.getItem(TOKEN_KEY),
+  set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
+  clear: () => localStorage.removeItem(TOKEN_KEY),
+};
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
+  const token = tokenStorage.get();
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string>),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      // Optional auto-clear if unauthorized
+      tokenStorage.clear();
+    }
     let errorDetail = 'Request failed';
     try {
       const errJson = await response.json();
@@ -130,6 +152,72 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  // Authentication & Workspaces
+  login: async (data: { email: string; password: string }) => {
+    const res = await request<TokenResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    tokenStorage.set(res.access_token);
+    return res;
+  },
+
+  register: async (data: {
+    email: string;
+    password: string;
+    business_name: string;
+    enterprise_type?: string;
+    udyam_number?: string;
+    state?: string;
+    district?: string;
+    industry_category?: string;
+    contact_phone?: string;
+  }) => {
+    const res = await request<TokenResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    tokenStorage.set(res.access_token);
+    return res;
+  },
+
+  getMe: () => request<User>('/auth/me'),
+
+  logout: () => {
+    tokenStorage.clear();
+  },
+
+  // Document Extraction
+  extractInvoiceDocument: async (file: File): Promise<DocumentExtractionResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = tokenStorage.get();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/invoices/extract-document`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      let err = 'Document extraction failed';
+      try {
+        const json = await response.json();
+        err = json.detail || json.message || err;
+      } catch {
+        err = response.statusText || err;
+      }
+      throw new Error(err);
+    }
+
+    return response.json();
+  },
 
   // Demo Controls
   resetDemoData: () => request<{ status: string; message: string; invoices_seeded: number; cases_seeded: number }>('/demo/reset', { method: 'POST' }),

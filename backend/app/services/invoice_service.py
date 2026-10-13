@@ -106,10 +106,13 @@ class InvoiceService:
         return filtered
 
     @staticmethod
-    def get_invoice_by_id(db: Session, invoice_id: int) -> Invoice:
-        invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    def get_invoice_by_id(db: Session, invoice_id: int, business_profile_id: Optional[int] = None) -> Invoice:
+        query = db.query(Invoice).filter(Invoice.id == invoice_id)
+        if business_profile_id is not None:
+            query = query.filter(Invoice.business_profile_id == business_profile_id)
+        invoice = query.first()
         if not invoice:
-            raise HTTPException(status_code=404, detail="Invoice not found")
+            raise HTTPException(status_code=404, detail="Invoice not found or access denied")
             
         profile = db.query(BusinessProfile).filter(BusinessProfile.id == invoice.business_profile_id).first()
         enterprise_type = profile.enterprise_type if profile else "micro"
@@ -133,13 +136,13 @@ class InvoiceService:
 
     @staticmethod
     def create_invoice(db: Session, payload: InvoiceCreate, business_profile_id: int = 1) -> Invoice:
-        # Check uniqueness of invoice_number
+        # Check uniqueness of invoice_number within this business profile
         existing = db.query(Invoice).filter(
             Invoice.invoice_number == payload.invoice_number,
             Invoice.business_profile_id == business_profile_id
         ).first()
         if existing:
-            raise HTTPException(status_code=400, detail=f"Invoice number '{payload.invoice_number}' already exists")
+            raise HTTPException(status_code=400, detail=f"Invoice number '{payload.invoice_number}' already exists in your workspace")
 
         total = round(payload.total_amount, 2)
         invoice = Invoice(
@@ -163,6 +166,8 @@ class InvoiceService:
             status="issued",
             goods_services_description=payload.goods_services_description,
             notes=payload.notes,
+            source_file_path=payload.source_file_path,
+            extraction_metadata=payload.extraction_metadata,
         )
         db.add(invoice)
         db.flush()
@@ -202,15 +207,18 @@ class InvoiceService:
 
         db.commit()
         db.refresh(invoice)
-        return InvoiceService.get_invoice_by_id(db, invoice.id)
+        return InvoiceService.get_invoice_by_id(db, invoice.id, business_profile_id=business_profile_id)
 
     @staticmethod
-    def update_invoice(db: Session, invoice_id: int, payload: InvoiceUpdate) -> Invoice:
-        invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    def update_invoice(db: Session, invoice_id: int, payload: InvoiceUpdate, business_profile_id: Optional[int] = None) -> Invoice:
+        query = db.query(Invoice).filter(Invoice.id == invoice_id)
+        if business_profile_id is not None:
+            query = query.filter(Invoice.business_profile_id == business_profile_id)
+        invoice = query.first()
         if not invoice:
-            raise HTTPException(status_code=404, detail="Invoice not found")
+            raise HTTPException(status_code=404, detail="Invoice not found or access denied")
 
-        update_data = payload.dict(exclude_unset=True)
+        update_data = payload.model_dump(exclude_unset=True)
         if "total_amount" in update_data and update_data["total_amount"] is not None:
             new_total = round(update_data["total_amount"], 2)
             if new_total < invoice.paid_amount:
@@ -233,13 +241,16 @@ class InvoiceService:
 
         db.commit()
         db.refresh(invoice)
-        return InvoiceService.get_invoice_by_id(db, invoice.id)
+        return InvoiceService.get_invoice_by_id(db, invoice.id, business_profile_id=business_profile_id)
 
     @staticmethod
-    def record_payment(db: Session, invoice_id: int, payload: PaymentCreate) -> Payment:
-        invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    def record_payment(db: Session, invoice_id: int, payload: PaymentCreate, business_profile_id: Optional[int] = None) -> Payment:
+        query = db.query(Invoice).filter(Invoice.id == invoice_id)
+        if business_profile_id is not None:
+            query = query.filter(Invoice.business_profile_id == business_profile_id)
+        invoice = query.first()
         if not invoice:
-            raise HTTPException(status_code=404, detail="Invoice not found")
+            raise HTTPException(status_code=404, detail="Invoice not found or access denied")
 
         pay_amount = round(payload.amount, 2)
         if pay_amount <= 0:
