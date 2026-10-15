@@ -39,8 +39,8 @@ class InvoiceBase(BaseModel):
     objection_date: Optional[date] = None
     objection_resolved_date: Optional[date] = None
     
-    has_written_agreement: bool = True
-    agreed_credit_days: Optional[int] = Field(default=30, ge=0, le=180)
+    has_written_agreement: bool = False
+    agreed_credit_days: Optional[int] = Field(default=None, ge=0, le=180)
     
     total_amount: float = Field(..., gt=0, description="Total invoice amount must be positive")
     goods_services_description: Optional[str] = None
@@ -59,8 +59,8 @@ class InvoiceExtractionResult(BaseModel):
     buyer_gstin: Optional[str] = None
     invoice_date: Optional[str] = None
     total_amount: Optional[float] = None
-    agreed_credit_days: Optional[int] = 30
-    has_written_agreement: bool = True
+    agreed_credit_days: Optional[int] = None
+    has_written_agreement: Optional[bool] = None
     confidence_score: float = 0.0
     raw_text_preview: str = ""
     source_file_name: str = ""

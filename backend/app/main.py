@@ -22,6 +22,9 @@ logger = logging.getLogger("paypath")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Enforce production security rules
+    settings.validate_production_configuration()
+
     # Create tables on startup
     Base.metadata.create_all(bind=engine)
     if settings.ENABLE_DEMO_SEEDING:
@@ -29,7 +32,7 @@ async def lifespan(app: FastAPI):
         try:
             count = db.query(Invoice).count()
             if count == 0:
-                logger.info("Initializing database with PitchVerse demo seed data...")
+                logger.info("Initializing database with sample demonstration records...")
                 seed_database(db, force_reset=False)
         finally:
             db.close()
@@ -43,10 +46,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Enable CORS for Vite frontend
+# Enable CORS for trusted frontend origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permits all local Vite and preview ports
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -27,11 +27,10 @@ export const SupplierDiscoveryView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
-  // Mode: 'directory' or 'advertiser'
-  const [viewMode, setViewMode] = useState<'directory' | 'advertiser'>('directory');
-  const [selectedSupplierForAdvertiser, setSelectedSupplierForAdvertiser] = useState<number | null>(null);
-  const [advertiserLeads, setAdvertiserLeads] = useState<SupplierEnquiry[]>([]);
-  const [loadingLeads, setLoadingLeads] = useState(false);
+  // Mode: 'directory' or 'my_enquiries'
+  const [viewMode, setViewMode] = useState<'directory' | 'my_enquiries'>('directory');
+  const [myEnquiries, setMyEnquiries] = useState<SupplierEnquiry[]>([]);
+  const [loadingEnquiries, setLoadingEnquiries] = useState(false);
 
   // Enquiry Modal
   const [enquiryModalSupplier, setEnquiryModalSupplier] = useState<SupplierListing | null>(null);
@@ -54,9 +53,6 @@ export const SupplierDiscoveryView: React.FC = () => {
       ]);
       setSuppliers(supList);
       setProfile(prof);
-      if (supList.length > 0 && !selectedSupplierForAdvertiser) {
-        setSelectedSupplierForAdvertiser(supList[0].id);
-      }
     } catch (err: any) {
       console.error(err);
     } finally {
@@ -106,8 +102,8 @@ export const SupplierDiscoveryView: React.FC = () => {
       setEnquirySuccessMessage(`Enquiry submitted to ${enquiryModalSupplier.company_name}! Lead recorded with explicit consent.`);
       setEnquiryModalSupplier(null);
       setTimeout(() => setEnquirySuccessMessage(null), 5000);
-      if (viewMode === 'advertiser') {
-        loadAdvertiserLeads(enquiryModalSupplier.id);
+      if (viewMode === 'my_enquiries') {
+        loadMyEnquiries();
       }
     } catch (err: any) {
       alert('Failed to submit enquiry: ' + err.message);
@@ -116,16 +112,15 @@ export const SupplierDiscoveryView: React.FC = () => {
     }
   };
 
-  const loadAdvertiserLeads = async (supplierId: number) => {
+  const loadMyEnquiries = async () => {
     try {
-      setLoadingLeads(true);
-      setSelectedSupplierForAdvertiser(supplierId);
-      const leads = await api.getAdvertiserLeads(supplierId);
-      setAdvertiserLeads(leads);
+      setLoadingEnquiries(true);
+      const data = await api.getEnquiryHistory();
+      setMyEnquiries(data);
     } catch (err: any) {
       console.error(err);
     } finally {
-      setLoadingLeads(false);
+      setLoadingEnquiries(false);
     }
   };
 
@@ -162,14 +157,14 @@ export const SupplierDiscoveryView: React.FC = () => {
             </button>
             <button
               onClick={() => {
-                setViewMode('advertiser');
-                if (selectedSupplierForAdvertiser) loadAdvertiserLeads(selectedSupplierForAdvertiser);
+                setViewMode('my_enquiries');
+                loadMyEnquiries();
               }}
               className={`px-3 py-1.5 rounded-md transition-all ${
-                viewMode === 'advertiser' ? 'bg-emerald-600 text-white shadow-xs font-semibold' : 'text-slate-400 hover:text-white'
+                viewMode === 'my_enquiries' ? 'bg-emerald-600 text-white shadow-xs font-semibold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Advertiser / Supplier View
+              My Sent Enquiries
             </button>
           </div>
         </div>
@@ -332,78 +327,69 @@ export const SupplierDiscoveryView: React.FC = () => {
         </div>
       )}
 
-      {/* ADVERTISER / SUPPLIER PERSPECTIVE VIEW */}
-      {viewMode === 'advertiser' && (
+      {/* MY SENT ENQUIRIES VIEW */}
+      {viewMode === 'my_enquiries' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
           <div className="border-b border-slate-100 pb-4">
             <h2 className="text-base font-bold text-slate-900">
-              Supplier Partner / Advertiser Portal View (Competition Transparency)
+              My Sent B2B Enquiries
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              This demonstrates how sponsored suppliers view and receive qualified commercial leads submitted with explicit enterprise consent.
+              Track commercial quotation requests sent from your business profile to verified supplier partners.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-3 text-xs">
-            <label className="font-semibold text-slate-700">Select Participating Supplier:</label>
-            <select
-              value={selectedSupplierForAdvertiser || ''}
-              onChange={(e) => loadAdvertiserLeads(Number(e.target.value))}
-              className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            >
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.company_name} ({s.city})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {loadingLeads ? (
+          {loadingEnquiries ? (
             <div className="p-8 text-center flex flex-col items-center justify-center space-y-2">
               <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-              <p className="text-xs text-slate-500 font-medium">Fetching advertiser lead registry...</p>
+              <p className="text-xs text-slate-500 font-medium">Loading your sent enquiries...</p>
             </div>
-          ) : advertiserLeads.length === 0 ? (
+          ) : myEnquiries.length === 0 ? (
             <div className="bg-slate-50 rounded-xl p-8 text-center text-xs text-slate-500 space-y-2">
-              <p className="font-semibold text-slate-700">No enquiries submitted for this sponsor yet.</p>
+              <p className="font-semibold text-slate-700">No enquiries submitted yet.</p>
               <p className="text-[11px] text-slate-400">
-                Switch to the "Enterprise Buyer Directory" tab above, click "Send Enquiry" on this supplier with consent, and return here to inspect the recorded lead!
+                Switch to the "Enterprise Buyer Directory" tab above, click "Send Enquiry" on any verified supplier partner to request quotations or commercial terms.
               </p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden text-xs">
               <div className="bg-slate-50 px-4 py-2.5 font-bold text-slate-600 uppercase text-[10px] grid grid-cols-4">
-                <span>Requester Company</span>
-                <span>Product Interest</span>
+                <span>Supplier / Product</span>
+                <span>Requester Details</span>
                 <span>Enquiry Message</span>
                 <span className="text-right">Consent & Date</span>
               </div>
-              {advertiserLeads.map((lead) => (
-                <div key={lead.id} className="p-4 grid grid-cols-4 items-start hover:bg-slate-50/50">
-                  <div>
-                    <div className="font-bold text-slate-900">{lead.requester_company_name}</div>
-                    <div className="text-[11px] text-slate-500">{lead.requester_name}</div>
-                    <div className="text-[11px] text-blue-600 font-mono mt-0.5">{lead.requester_email}</div>
-                  </div>
-                  <div>
-                    <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-semibold text-[10px]">
-                      {lead.product_interest}
-                    </span>
-                  </div>
-                  <div className="text-slate-600 pr-4">
-                    {lead.message}
-                  </div>
-                  <div className="text-right space-y-1">
-                    <span className="inline-block bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      Explicit Consent Verified
-                    </span>
-                    <div className="text-[10px] text-slate-400">
-                      {new Date(lead.consent_timestamp).toLocaleString('en-IN')}
+              {myEnquiries.map((lead) => {
+                const matchedSup = suppliers.find((s) => s.id === lead.supplier_id);
+                return (
+                  <div key={lead.id} className="p-4 grid grid-cols-4 items-start hover:bg-slate-50/50">
+                    <div>
+                      <div className="font-bold text-slate-900">
+                        {matchedSup ? matchedSup.company_name : `Supplier #${lead.supplier_id}`}
+                      </div>
+                      <span className="inline-block mt-1 bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-semibold text-[10px]">
+                        {lead.product_interest}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-slate-800">{lead.requester_name}</div>
+                      <div className="text-[11px] text-slate-500">{lead.requester_company_name}</div>
+                      <div className="text-[11px] text-blue-600 font-mono mt-0.5">{lead.requester_email}</div>
+                    </div>
+                    <div className="text-slate-600 pr-4">
+                      {lead.message}
+                    </div>
+                    <div className="text-right space-y-1">
+                      <span className="inline-block bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        Explicit Consent Verified
+                      </span>
+                      <div className="text-[10px] text-slate-400">
+                        {new Date(lead.consent_timestamp).toLocaleString('en-IN')}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

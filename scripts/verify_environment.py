@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 print("==================================================")
 print(" PayPath MSME -- Environment & Diagnostic Verifier")
-print(" SLIET PITCHVERSE 2026 | Prototype Verification")
+print(" Production Hardened & Independent MSME Workspace")
 print("==================================================")
 
 # 1. Check Python version
@@ -29,6 +29,7 @@ try:
     res = LegalEngine.calculate_timeline_and_interest(
         invoice_date=date(2026, 8, 1),
         delivery_date=date(2026, 8, 2),
+        has_written_agreement=True,
         agreed_credit_days=30,
         outstanding_principal=100000.0,
         as_of_date=date(2026, 10, 1),

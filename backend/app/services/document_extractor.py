@@ -23,9 +23,20 @@ class DocumentExtractor:
 
     @classmethod
     def save_uploaded_file(cls, filename: str, content: bytes) -> Tuple[str, str]:
-        ext = os.path.splitext(filename)[1].lower() or ".pdf"
-        unique_name = f"inv_{uuid.uuid4().hex[:12]}{ext}"
+        # Validate magic bytes for PDF
+        if not content.startswith(b"%PDF-"):
+            raise ValueError("File content does not match a valid PDF binary signature.")
+
+        # Always use a generated internal filename to prevent path traversal
+        unique_name = f"inv_{uuid.uuid4().hex[:16]}.pdf"
         saved_path = os.path.join(cls.get_upload_dir(), unique_name)
+        
+        # Verify saved_path is within upload_dir (anti-traversal defense)
+        real_upload_dir = os.path.realpath(cls.get_upload_dir())
+        real_saved_path = os.path.realpath(saved_path)
+        if not real_saved_path.startswith(real_upload_dir):
+            raise ValueError("Unsafe file path detected.")
+
         with open(saved_path, "wb") as f:
             f.write(content)
         return unique_name, saved_path
@@ -59,7 +70,7 @@ class DocumentExtractor:
         gstin_match = re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b", text, re.IGNORECASE)
         if gstin_match:
             gstin = gstin_match.group(0).upper()
-            confidence += 0.25
+            confidence += 0.2
 
         # 2. Extract Invoice Number
         invoice_number = None
@@ -70,14 +81,9 @@ class DocumentExtractor:
         )
         if inv_match:
             cand = inv_match.group(1).strip()
-            if len(cand) >= 3 and len(cand) <= 30:
+            if 3 <= len(cand) <= 30:
                 invoice_number = cand
-                confidence += 0.25
-        else:
-            # Fallback heuristic based on filename
-            name_cand = re.sub(r"\.[a-zA-Z0-9]+$", "", original_filename)
-            if re.search(r"\d+", name_cand):
-                invoice_number = f"INV-{name_cand[:12].upper()}"
+                confidence += 0.3
 
         # 3. Extract Amount
         total_amount = None
@@ -92,7 +98,7 @@ class DocumentExtractor:
                 cand_float = float(cand_str)
                 if cand_float > 0:
                     total_amount = round(cand_float, 2)
-                    confidence += 0.25
+                    confidence += 0.3
             except ValueError:
                 pass
 
@@ -105,18 +111,14 @@ class DocumentExtractor:
         )
         if date_match:
             d_str = date_match.group(1)
-            # Try formatting
             for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%d-%m-%y", "%d/%m/%y", "%Y-%m-%d"):
                 try:
                     dt = datetime.strptime(d_str, fmt).date()
                     extracted_date = dt.isoformat()
-                    confidence += 0.25
+                    confidence += 0.2
                     break
                 except ValueError:
                     continue
-
-        if not extracted_date:
-            extracted_date = date.today().isoformat()
 
         # 5. Extract Buyer Name heuristic
         buyer_name = None
@@ -127,18 +129,17 @@ class DocumentExtractor:
         )
         if buyer_match:
             b_cand = buyer_match.group(1).strip()
-            # Clean common noise
-            if not any(kw in b_cand.lower() for kw in ("gstin", "invoice", "date", "address")):
+            if not any(kw in b_cand.lower() for kw in ("gstin", "invoice", "date", "address", "state", "tax")):
                 buyer_name = b_cand
 
         return InvoiceExtractionResult(
-            invoice_number=invoice_number or f"INV-{uuid.uuid4().hex[:6].upper()}",
-            buyer_name=buyer_name or "Verified Debtor Name",
+            invoice_number=invoice_number,
+            buyer_name=buyer_name,
             buyer_gstin=gstin,
             invoice_date=extracted_date,
             total_amount=total_amount,
-            agreed_credit_days=30,
-            has_written_agreement=True,
+            agreed_credit_days=None,
+            has_written_agreement=None,
             confidence_score=round(confidence, 2),
             raw_text_preview=preview,
             source_file_name=original_filename,

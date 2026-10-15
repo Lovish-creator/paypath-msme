@@ -180,7 +180,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                   <div className="w-full border-t border-slate-200"></div>
                 </div>
                 <div className="relative flex justify-center text-[11px] uppercase">
-                  <span className="bg-white px-2 text-slate-400 font-semibold">Or for Competition Review</span>
+                  <span className="bg-white px-2 text-slate-400 font-semibold">Or for Demo Workspace</span>
                 </div>
               </div>
 
@@ -192,7 +192,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 className="w-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-2"
               >
                 <Building2 className="w-4 h-4 text-emerald-600" />
-                <span>1-Click Sign In: Apex Uniforms (PitchVerse Baseline)</span>
+                <span>1-Click Sign In: Apex Uniforms (Sample Account)</span>
               </button>
             </form>
           ) : (

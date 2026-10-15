@@ -16,7 +16,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onDataReset }) => {
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   const handleReset = async () => {
-    if (!window.confirm("Reset demo data to canonical SLIET PitchVerse 2026 baseline?")) {
+    if (!window.confirm("Reset demo data to initial workspace state?")) {
       return;
     }
     try {
@@ -49,7 +49,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onDataReset }) => {
                 <div className="flex items-center space-x-2">
                   <span className="font-bold text-lg tracking-tight text-white">PayPath MSME</span>
                   <span className="bg-blue-500/20 text-blue-300 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-blue-400/30">
-                    SLIET PITCHVERSE 2026
+                    MSME WORKSPACE
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 hidden sm:block">

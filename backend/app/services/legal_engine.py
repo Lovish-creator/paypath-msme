@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Dict, Any, List
 import math
 from backend.app.core.config import settings
@@ -43,8 +44,8 @@ class LegalEngine:
         has_objection: bool = False,
         objection_date: Optional[date] = None,
         objection_resolved_date: Optional[date] = None,
-        has_written_agreement: bool = True,
-        agreed_credit_days: Optional[int] = 30,
+        has_written_agreement: bool = False,
+        agreed_credit_days: Optional[int] = None,
         outstanding_principal: float = 0.0,
         enterprise_type: str = "micro",  # micro, small, medium
         udyam_registered: bool = True,
@@ -111,8 +112,8 @@ class LegalEngine:
         statutory_term_capped = False
         statutory_term_days = 15
 
-        if has_written_agreement:
-            credit_days = agreed_credit_days if agreed_credit_days is not None else 30
+        if has_written_agreement and agreed_credit_days is not None:
+            credit_days = agreed_credit_days
             if credit_days <= 45:
                 statutory_term_days = credit_days
                 statutory_rule_citation = (
@@ -136,24 +137,27 @@ class LegalEngine:
         else:
             statutory_term_days = 15
             statutory_rule_citation = (
-                "Section 15 & Section 2(b) MSMED Act, 2006: In the absence of a written agreement, "
+                "Section 15 & Section 2(b) MSMED Act, 2006: In the absence of an agreed written period, "
                 "payment must be made before the 'appointed day' (15 days from day of acceptance/deemed acceptance)."
             )
             calculation_trace.append(
-                "No written agreement recorded. Statutory 15-day timeline applied per Section 15 MSMED Act."
+                "No contractual credit period established in writing. Statutory 15-day timeline applied per Section 15 MSMED Act."
             )
 
-        # Determine effective Bank Rate
-        bank_rate = custom_bank_rate if custom_bank_rate is not None else cls.get_effective_bank_rate(evaluation_date)
-        annual_statutory_rate = round(bank_rate * cls.STATUTORY_MULTIPLIER, 4)
-        monthly_rate = annual_statutory_rate / 100.0 / 12.0
+        # Determine effective Bank Rate and Decimal Precision
+        bank_rate_num = custom_bank_rate if custom_bank_rate is not None else cls.get_effective_bank_rate(evaluation_date)
+        bank_rate = Decimal(str(bank_rate_num))
+        multiplier = Decimal(str(cls.STATUTORY_MULTIPLIER))
+        annual_statutory_rate = (bank_rate * multiplier).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        monthly_rate = annual_statutory_rate / Decimal("100") / Decimal("12")
+        principal_dec = Decimal(str(outstanding_principal)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         # 3. Calculate Due Date & Overdue Evaluation
         calculated_due_date: Optional[date] = None
         is_overdue = False
         days_overdue = 0
         days_remaining = 0
-        estimated_interest = 0.0
+        estimated_interest = Decimal("0.00")
         interest_breakdown: Dict[str, Any] = {}
 
         if objection_unresolved or reference_date is None:
@@ -162,14 +166,14 @@ class LegalEngine:
             is_overdue = False
             days_overdue = 0
             days_remaining = 0
-            estimated_interest = 0.0
+            estimated_interest = Decimal("0.00")
             interest_breakdown = {
-                "principal": outstanding_principal,
+                "principal": float(principal_dec),
                 "full_months": 0,
                 "residual_days": 0,
-                "monthly_interest_rate_pct": round(monthly_rate * 100, 4),
-                "annual_interest_rate_pct": annual_statutory_rate,
-                "compounded_amount": outstanding_principal,
+                "monthly_interest_rate_pct": float((monthly_rate * Decimal("100")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                "annual_interest_rate_pct": float(annual_statutory_rate),
+                "compounded_amount": float(principal_dec),
                 "estimated_interest": 0.0,
             }
             calculation_trace.append(
@@ -196,43 +200,43 @@ class LegalEngine:
                     f"Invoice is currently within credit period. {days_remaining} days remaining until due date ({calculated_due_date})."
                 )
 
-            # 5. Compound Interest Calculation (Section 16 MSMED Act)
-            if is_overdue and outstanding_principal > 0:
+            # 5. Compound Interest Calculation (Section 16 MSMED Act) using Decimal
+            if is_overdue and principal_dec > Decimal("0"):
                 full_months = days_overdue // 30
                 residual_days = days_overdue % 30
+
+                compounded_principal = principal_dec * ((Decimal("1") + monthly_rate) ** full_months)
+                pro_rata_factor = Decimal("1") + (monthly_rate * (Decimal(str(residual_days)) / Decimal("30")))
+                total_due_with_interest = (compounded_principal * pro_rata_factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 
-                compounded_principal = outstanding_principal * ((1.0 + monthly_rate) ** full_months)
-                pro_rata_factor = 1.0 + (monthly_rate * (residual_days / 30.0))
-                total_due_with_interest = compounded_principal * pro_rata_factor
-                
-                estimated_interest = round(total_due_with_interest - outstanding_principal, 2)
+                estimated_interest = (total_due_with_interest - principal_dec).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 
                 calculation_trace.append(
-                    f"Section 16 statutory interest applied: RBI Bank Rate {bank_rate}% x 3 = {annual_statutory_rate}% p.a. "
+                    f"Section 16 statutory interest applied: RBI Bank Rate {float(bank_rate)}% x 3 = {float(annual_statutory_rate)}% p.a. "
                     f"Compounded monthly for {full_months} full months and {residual_days} residual days: "
-                    f"Estimated Interest = ₹{estimated_interest:,.2f} on Principal ₹{outstanding_principal:,.2f}."
+                    f"Estimated Interest = ₹{float(estimated_interest):,.2f} on Principal ₹{float(principal_dec):,.2f}."
                 )
                 interest_breakdown = {
-                    "principal": outstanding_principal,
+                    "principal": float(principal_dec),
                     "full_months": full_months,
                     "residual_days": residual_days,
-                    "monthly_interest_rate_pct": round(monthly_rate * 100, 4),
-                    "annual_interest_rate_pct": annual_statutory_rate,
-                    "compounded_amount": round(total_due_with_interest, 2),
-                    "estimated_interest": estimated_interest,
+                    "monthly_interest_rate_pct": float((monthly_rate * Decimal("100")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                    "annual_interest_rate_pct": float(annual_statutory_rate),
+                    "compounded_amount": float(total_due_with_interest),
+                    "estimated_interest": float(estimated_interest),
                 }
             else:
                 interest_breakdown = {
-                    "principal": outstanding_principal,
+                    "principal": float(principal_dec),
                     "full_months": 0,
                     "residual_days": 0,
-                    "monthly_interest_rate_pct": round(monthly_rate * 100, 4),
-                    "annual_interest_rate_pct": annual_statutory_rate,
-                    "compounded_amount": outstanding_principal,
+                    "monthly_interest_rate_pct": float((monthly_rate * Decimal("100")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                    "annual_interest_rate_pct": float(annual_statutory_rate),
+                    "compounded_amount": float(principal_dec),
                     "estimated_interest": 0.0,
                 }
 
-        total_claimable = round(outstanding_principal + estimated_interest, 2)
+        total_claimable = (principal_dec + estimated_interest).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         # 6. Section 43B(h) Income Tax Assessment
         sec_43b_h_applicable = enterprise_type.lower() in ("micro", "small")
@@ -284,11 +288,11 @@ class LegalEngine:
             "is_overdue": is_overdue,
             "days_overdue": days_overdue,
             "days_remaining": days_remaining,
-            "outstanding_principal": outstanding_principal,
-            "rbi_bank_rate_pct": bank_rate,
-            "annual_statutory_interest_rate_pct": annual_statutory_rate,
-            "estimated_interest": estimated_interest,
-            "total_claimable_amount": total_claimable,
+            "outstanding_principal": float(principal_dec),
+            "rbi_bank_rate_pct": float(bank_rate),
+            "annual_statutory_interest_rate_pct": float(annual_statutory_rate),
+            "estimated_interest": float(estimated_interest),
+            "total_claimable_amount": float(total_claimable),
             "interest_breakdown": interest_breakdown,
             "section_43b_h_applicable": sec_43b_h_applicable,
             "section_43b_h_impact": sec_43b_h_impact,

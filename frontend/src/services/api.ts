@@ -143,7 +143,15 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  getEnquiryHistory: () => request<SupplierEnquiry[]>('/suppliers/enquiries/history'),
+
   getAdvertiserLeads: (supplierId: number) => request<SupplierEnquiry[]>(`/suppliers/${supplierId}/advertiser-leads`),
+
+  // Invoices Management
+  deleteInvoice: (id: number) =>
+    request<{ status: string; message: string }>(`/invoices/${id}`, {
+      method: 'DELETE',
+    }),
 
   // Business Profile
   getCurrentProfile: () => request<BusinessProfile>('/suppliers/profile/current'),

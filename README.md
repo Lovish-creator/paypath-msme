@@ -1,6 +1,6 @@
 # PayPath MSME
 ### *From overdue invoice to an organised, evidence-backed next step.*
-**SLIET PITCHVERSE 2026 | Working Startup Prototype | Tier 1 Modular Monolith**
+**Independent B2B Receivables Platform | Production-Hardened Startup Prototype**
 
 ---
 

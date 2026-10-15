@@ -305,3 +305,23 @@ class InvoiceService:
         db.commit()
         db.refresh(payment)
         return payment
+
+    @staticmethod
+    def delete_invoice(db: Session, invoice_id: int, business_profile_id: Optional[int] = None) -> Dict[str, Any]:
+        query = db.query(Invoice).filter(Invoice.id == invoice_id)
+        if business_profile_id is not None:
+            query = query.filter(Invoice.business_profile_id == business_profile_id)
+        invoice = query.first()
+        if not invoice:
+            raise HTTPException(status_code=404, detail="Invoice not found or access denied")
+
+        if invoice.paid_amount > 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot delete invoice with recorded payments (₹{invoice.paid_amount:,.2f}). Please reconcile payments before deleting.",
+            )
+
+        inv_num = invoice.invoice_number
+        db.delete(invoice)
+        db.commit()
+        return {"status": "success", "message": f"Invoice {inv_num} successfully deleted."}

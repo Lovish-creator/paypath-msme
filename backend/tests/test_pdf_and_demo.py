@@ -29,10 +29,24 @@ def test_dashboard_metrics_consistency():
     assert len(data["stage_breakdown"]) == 8
 
 
+from backend.app.core.config import settings
+
+
 def test_demo_reset_action():
-    resp = client.post("/api/demo/reset")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "success"
-    assert data["invoices_seeded"] == 5
-    assert data["cases_seeded"] == 5
+    # 1. By default, ALLOW_DEMO_RESET is False -> must return 403 Forbidden
+    settings.ALLOW_DEMO_RESET = False
+    resp_blocked = client.post("/api/demo/reset")
+    assert resp_blocked.status_code == 403
+    assert "ALLOW_DEMO_RESET is disabled" in resp_blocked.json()["detail"]
+
+    # 2. When explicitly enabled in non-production, reset succeeds
+    settings.ALLOW_DEMO_RESET = True
+    try:
+        resp = client.post("/api/demo/reset")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "success"
+        assert data["invoices_seeded"] == 5
+        assert data["cases_seeded"] == 5
+    finally:
+        settings.ALLOW_DEMO_RESET = False

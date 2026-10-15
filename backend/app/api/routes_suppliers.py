@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -61,7 +61,11 @@ def get_enquiry_history(
 
 
 @router.get("/{supplier_id}", response_model=SupplierListingResponse)
-def get_supplier_detail(supplier_id: int, db: Session = Depends(get_db)):
+def get_supplier_detail(
+    supplier_id: int,
+    current_business: BusinessProfile = Depends(get_current_business),
+    db: Session = Depends(get_db),
+):
     return SupplierService.get_supplier_by_id(db=db, supplier_id=supplier_id)
 
 
@@ -80,8 +84,18 @@ def submit_supplier_enquiry(
     )
 
 
-
 @router.get("/{supplier_id}/advertiser-leads", response_model=List[SupplierEnquiryResponse])
-def get_advertiser_leads(supplier_id: int, db: Session = Depends(get_db)):
-    """Advertiser Perspective: View leads received for this supplier placement"""
-    return SupplierService.get_enquiries_for_supplier(db=db, supplier_id=supplier_id)
+def get_advertiser_leads(
+    supplier_id: int,
+    current_business: BusinessProfile = Depends(get_current_business),
+    db: Session = Depends(get_db),
+):
+    """
+    Advertiser Perspective: Restricted endpoint.
+    Lead data is proprietary to the listing sponsor and may only be accessed
+    by verified listing administrators. Regular business tenants cannot inspect other suppliers' leads.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access restricted to verified supplier listing administrators",
+    )

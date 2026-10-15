@@ -55,7 +55,7 @@ def test_supplier_enquiry_consent_enforcement():
     assert resp_hist.status_code == 200
     assert any(e["id"] == enquiry_data["id"] for e in resp_hist.json())
 
-    # 4. Check advertiser view for that supplier
+    # 4. Check advertiser view for that supplier is restricted
     resp_adv = client.get(f"/api/suppliers/{sup_id}/advertiser-leads")
-    assert resp_adv.status_code == 200
-    assert any(e["id"] == enquiry_data["id"] for e in resp_adv.json())
+    assert resp_adv.status_code == 403
+    assert "Access restricted" in resp_adv.json()["detail"]

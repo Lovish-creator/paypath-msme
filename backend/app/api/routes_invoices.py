@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, status, UploadFile, File, HTTPExc
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
+from backend.app.core.config import settings
 from backend.app.db.database import get_db
 from backend.app.core.auth import get_current_business
 from backend.app.models.business import BusinessProfile
@@ -25,19 +26,32 @@ async def extract_invoice_document(
     current_business: BusinessProfile = Depends(get_current_business),
 ):
     """
-    Accepts an uploaded invoice PDF or image, saves it securely,
+    Accepts an uploaded invoice PDF, saves it securely,
     extracts metadata and text, and returns verified field suggestions.
     """
     filename = file.filename or "invoice.pdf"
     content = await file.read()
     
-    # Validation
-    if len(content) > 15 * 1024 * 1024:  # 15MB limit
-        raise HTTPException(status_code=400, detail="Invoice file size exceeds 15MB limit")
-    
-    unique_name, saved_path = DocumentExtractor.save_uploaded_file(filename, content)
-    result = DocumentExtractor.extract_from_pdf(saved_path, filename)
-    return result
+    # Size validation
+    if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Invoice file size exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)}MB."
+        )
+
+    # Magic bytes validation
+    if not content.startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file format. Uploaded file must be a valid PDF document starting with '%PDF-'."
+        )
+
+    try:
+        unique_name, saved_path = DocumentExtractor.save_uploaded_file(filename, content)
+        result = DocumentExtractor.extract_from_pdf(saved_path, filename)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("", response_model=List[InvoiceResponse])
@@ -109,6 +123,23 @@ def record_payment(
         db=db,
         invoice_id=invoice_id,
         payload=payload,
+        business_profile_id=current_business.id,
+    )
+
+
+@router.delete("/{invoice_id}")
+def delete_invoice(
+    invoice_id: int,
+    current_business: BusinessProfile = Depends(get_current_business),
+    db: Session = Depends(get_db),
+):
+    """
+    Deletes an invoice and its associated case/evidence if no payments have been recorded.
+    Enforces business workspace isolation.
+    """
+    return InvoiceService.delete_invoice(
+        db=db,
+        invoice_id=invoice_id,
         business_profile_id=current_business.id,
     )
 

@@ -17,6 +17,7 @@ import {
   FileText,
   Sparkles,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Invoice, DocumentExtractionResult } from '../../types';
@@ -49,8 +50,8 @@ export const InvoicesView: React.FC = () => {
     buyer_contact_phone: '',
     invoice_date: new Date().toISOString().split('T')[0],
     delivery_date: new Date().toISOString().split('T')[0],
-    has_written_agreement: true,
-    agreed_credit_days: 30,
+    has_written_agreement: false,
+    agreed_credit_days: 15,
     total_amount: '',
     goods_services_description: '',
   });
@@ -69,8 +70,8 @@ export const InvoicesView: React.FC = () => {
       buyer_contact_phone: '',
       invoice_date: new Date().toISOString().split('T')[0],
       delivery_date: new Date().toISOString().split('T')[0],
-      has_written_agreement: true,
-      agreed_credit_days: 30,
+      has_written_agreement: false,
+      agreed_credit_days: 15,
       total_amount: '',
       goods_services_description: '',
     });
@@ -110,6 +111,22 @@ export const InvoicesView: React.FC = () => {
       navigate(`/cases/${caseDetail.id}`);
     } catch (err: any) {
       alert('Failed to navigate to case: ' + err.message);
+    }
+  };
+
+  const handleDeleteInvoice = async (invoice: Invoice) => {
+    if (invoice.paid_amount > 0) {
+      alert(`Cannot delete invoice #${invoice.invoice_number} because payments of ₹${invoice.paid_amount.toLocaleString('en-IN')} have already been recorded.`);
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete invoice #${invoice.invoice_number}? This will permanently remove the invoice and its associated case.`)) {
+      return;
+    }
+    try {
+      await api.deleteInvoice(invoice.id);
+      fetchInvoices();
+    } catch (err: any) {
+      alert('Failed to delete invoice: ' + err.message);
     }
   };
 
@@ -421,6 +438,18 @@ export const InvoicesView: React.FC = () => {
                             <span>Escalate</span>
                           </button>
                         )}
+                        <button
+                          onClick={() => handleDeleteInvoice(inv)}
+                          disabled={inv.paid_amount > 0}
+                          title={inv.paid_amount > 0 ? "Cannot delete invoice with recorded payments" : "Delete invoice"}
+                          className={`p-1.5 rounded transition-colors inline-flex items-center ${
+                            inv.paid_amount > 0
+                              ? 'text-slate-300 cursor-not-allowed'
+                              : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                          }`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                     </tr>
                   );
@@ -602,29 +631,42 @@ export const InvoicesView: React.FC = () => {
               )}
 
               {extractionResult && (
-                <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-left text-[11px] space-y-1">
-                  <div className="flex items-center space-x-1 text-emerald-800 font-bold">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Auto-Extracted from {extractionResult.filename}</span>
+                <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3 text-left text-[11px] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-1 text-slate-800 font-bold">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Extracted from {extractionResult.filename}</span>
+                    </div>
+                    <span className="text-[10px] bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded">
+                      Review & Confirm Required
+                    </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-700">
+
+                  {(!extractionResult.invoice_number || !extractionResult.total_amount || !extractionResult.invoice_date || !extractionResult.buyer_name) && (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-[10px] flex items-start space-x-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                      <div>
+                        <span className="font-bold">Missing Fields Detected:</span> One or more key fields could not be found in the document text stream. PayPath MSME never invents or fabricates data. Please review and input the missing information in the form below.
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-1.5 text-[10px] text-slate-700 bg-white p-2.5 rounded border border-slate-200">
                     <div>
-                      Inv #: <span className="font-semibold text-slate-900">{extractionResult.invoice_number || 'Not detected'}</span>{' '}
-                      <span className="text-emerald-700 font-mono">({Math.round(extractionResult.confidence.invoice_number * 100)}%)</span>
+                      Inv #: <span className={extractionResult.invoice_number ? "font-semibold text-slate-900" : "font-semibold text-amber-600"}>{extractionResult.invoice_number || 'Missing — please specify'}</span>
                     </div>
                     <div>
-                      Amount: <span className="font-semibold text-slate-900">{extractionResult.total_amount ? `₹${extractionResult.total_amount.toLocaleString('en-IN')}` : 'Not detected'}</span>{' '}
-                      <span className="text-emerald-700 font-mono">({Math.round(extractionResult.confidence.total_amount * 100)}%)</span>
+                      Amount: <span className={extractionResult.total_amount ? "font-semibold text-slate-900" : "font-semibold text-amber-600"}>{extractionResult.total_amount ? `₹${extractionResult.total_amount.toLocaleString('en-IN')}` : 'Missing — please specify'}</span>
                     </div>
                     <div>
                       Buyer GSTIN: <span className="font-semibold text-slate-900">{extractionResult.buyer_gstin || 'Not detected'}</span>
                     </div>
                     <div>
-                      Date: <span className="font-semibold text-slate-900">{extractionResult.invoice_date || 'Not detected'}</span>
+                      Date: <span className={extractionResult.invoice_date ? "font-semibold text-slate-900" : "font-semibold text-amber-600"}>{extractionResult.invoice_date || 'Missing — please specify'}</span>
                     </div>
                   </div>
-                  <p className="text-[10px] text-emerald-800 pt-0.5">
-                    ✓ Form auto-filled. Please review and adjust the fields below before recording.
+                  <p className="text-[10px] text-slate-500 italic">
+                    Verify all figures against your physical invoice before confirming and saving to your ledger.
                   </p>
                 </div>
               )}
