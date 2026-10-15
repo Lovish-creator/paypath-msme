@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -6,21 +7,26 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "PayPath MSME"
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-    DATABASE_URL: str = "sqlite:///./paypath.db"
+    DATABASE_URL: str = "sqlite:////tmp/paypath.db" if os.environ.get("VERCEL") else "sqlite:///./paypath.db"
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
     SECRET_KEY: str = "dev-insecure-secret-key-change-in-production-only"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
-    ENABLE_DEMO_SEEDING: bool = False
-    ALLOW_DEMO_RESET: bool = False
+    ENABLE_DEMO_SEEDING: bool = True if os.environ.get("VERCEL") else False
+    ALLOW_DEMO_RESET: bool = True if os.environ.get("VERCEL") else False
     MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024  # 10MB
     RBI_BANK_RATE_PERCENT: float = 6.75
     MSME_INTEREST_MULTIPLIER: float = 3.0
-    STORAGE_LOCAL_DIR: str = "./backend/data"
+    STORAGE_LOCAL_DIR: str = "/tmp/paypath_data" if os.environ.get("VERCEL") else "./backend/data"
 
     @property
     def cors_origins_list(self) -> List[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        origins = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        if os.environ.get("VERCEL_URL"):
+            origins.append(f"https://{os.environ.get('VERCEL_URL')}")
+        if os.environ.get("VERCEL_PROJECT_PRODUCTION_URL"):
+            origins.append(f"https://{os.environ.get('VERCEL_PROJECT_PRODUCTION_URL')}")
+        return origins
 
     def validate_production_configuration(self) -> None:
         """Validates that production environment variables meet security requirements."""
